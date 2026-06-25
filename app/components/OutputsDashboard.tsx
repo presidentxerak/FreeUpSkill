@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { BriefOutput } from "@/lib/types";
 
 interface Props {
@@ -21,6 +21,12 @@ export default function OutputsDashboard({
   bestName,
 }: Props) {
   const [copied, setCopied] = useState<string | null>(null);
+  const [pitch, setPitch] = useState("");
+
+  // Le pitch est personnalisable par le recruteur avant envoi.
+  useEffect(() => {
+    if (brief) setPitch(brief.pitchMission);
+  }, [brief]);
 
   function copy(text: string, key: string) {
     navigator.clipboard?.writeText(text).then(() => {
@@ -164,19 +170,38 @@ export default function OutputsDashboard({
                   L'accroche
                 </h3>
               </div>
+              <span className="muted no-print">Modifiable avant envoi</span>
             </div>
-            <p className="pitch-text">{brief.pitchMission}</p>
+            <textarea
+              className="pitch-edit no-print"
+              value={pitch}
+              aria-label="Pitch mission, modifiable"
+              onChange={(e) => setPitch(e.target.value)}
+              rows={Math.max(8, pitch.split("\n").length + 2)}
+            />
+            {/* version imprimable (le textarea ne s'imprime pas proprement) */}
+            <p className="pitch-text print-only">{pitch}</p>
             <div className="copy-row">
               <button
                 className="link-btn"
-                onClick={() => copy(brief.pitchMission, "pitch")}
+                onClick={() => copy(pitch, "pitch")}
               >
                 Copier le pitch
               </button>
-              {copied === "pitch" && (
-                <span className="copied">Copié ✓</span>
-              )}
+              {copied === "pitch" && <span className="copied">Copié ✓</span>}
             </div>
+          </div>
+
+          <div className="copy-row no-print" style={{ marginTop: 24 }}>
+            <button
+              className="cta ghost sm"
+              onClick={() =>
+                copy(briefToText(brief) + "\n\n— — —\n\nPITCH MISSION\n" + pitch, "all")
+              }
+            >
+              Copier le dossier complet
+            </button>
+            {copied === "all" && <span className="copied">Dossier copié ✓</span>}
           </div>
         </div>
       )}

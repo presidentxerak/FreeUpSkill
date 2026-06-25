@@ -1128,6 +1128,109 @@ textarea {
   margin-bottom: 16px;
 }
 
+/* révélation au scroll */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 0.7s var(--ease),
+    transform 0.7s var(--ease);
+}
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+
+/* glisser-déposer */
+.dropzone {
+  transition: outline-color 0.25s var(--ease);
+}
+.dropzone.dragover {
+  outline: 1.5px dashed var(--ink);
+  outline-offset: 12px;
+}
+.cv-card.dragover {
+  box-shadow: var(--shadow-lift);
+  outline: 1.5px dashed var(--ink);
+  outline-offset: 6px;
+}
+
+/* comparatif (matrice) */
+.matrix-wrap {
+  margin-top: 22px;
+  overflow-x: auto;
+}
+.matrix {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 540px;
+}
+.matrix th,
+.matrix td {
+  text-align: left;
+  padding: 16px 20px 16px 0;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+  font-size: 15px;
+  color: var(--ink-soft);
+}
+.matrix thead th {
+  font-family: "Playfair Display", serif;
+  font-size: 20px;
+  color: var(--ink);
+  border-bottom: 1.5px solid var(--ink);
+  padding-bottom: 14px;
+}
+.matrix tbody th {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--grey-600);
+  font-weight: 600;
+  width: 160px;
+  white-space: nowrap;
+}
+.matrix td .big {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+.matrix td .sub {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--grey-600);
+  margin-top: 5px;
+}
+.matrix tbody tr:last-child th,
+.matrix tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* pitch éditable */
+.pitch-edit {
+  width: 100%;
+  border: none;
+  border-left: 2px solid var(--hairline);
+  background: transparent;
+  padding: 2px 0 2px 20px;
+  font-family: "Outfit", sans-serif;
+  font-size: 16.5px;
+  font-weight: 400;
+  line-height: 1.85;
+  color: var(--ink-soft);
+  resize: vertical;
+}
+.pitch-edit:focus {
+  outline: none;
+  border-left-color: var(--ink);
+}
+
+.print-only {
+  display: none;
+}
+
 /* --------------------------------------------------------------- Responsive */
 
 @media (max-width: 600px) {
@@ -1191,5 +1294,12 @@ textarea {
   }
   .doc + .doc {
     margin-top: 16px;
+  }
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .print-only {
+    display: block !important;
   }
 }

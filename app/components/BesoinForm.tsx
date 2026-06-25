@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { BesoinInput, BesoinAnalysis } from "@/lib/types";
 import { readFileAsBase64, readFileAsText } from "@/lib/api";
+import Reveal from "./Reveal";
 
 interface Props {
   besoin: BesoinInput;
@@ -28,6 +29,7 @@ export default function BesoinForm({
   onContinue,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [drag, setDrag] = useState(false);
 
   function up<K extends keyof BesoinInput>(key: K, val: BesoinInput[K]) {
     setBesoin({ ...besoin, [key]: val });
@@ -39,9 +41,7 @@ export default function BesoinForm({
     setBesoin({ ...besoin, contraintes: { ...besoin.contraintes, [key]: val } });
   }
 
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function processFile(file: File) {
     if (file.type === "application/pdf") {
       const b64 = await readFileAsBase64(file);
       onFichePdf(b64, file.name);
@@ -50,6 +50,11 @@ export default function BesoinForm({
       up("fichePoste", text);
       onFichePdf(undefined, file.name);
     }
+  }
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
   }
 
   const canAnalyze =
@@ -95,15 +100,30 @@ export default function BesoinForm({
           />
         </div>
 
-        <div className="field span-2">
+        <div
+          className={"field span-2 dropzone" + (drag ? " dragover" : "")}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDrag(true);
+          }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDrag(false);
+            const f = e.dataTransfer.files?.[0];
+            if (f) processFile(f);
+          }}
+        >
           <label className="lbl">
             Texte de la fiche de poste
-            <span className="hint">collez le texte ou importez un PDF</span>
+            <span className="hint">
+              collez le texte, importez ou glissez un PDF
+            </span>
           </label>
           <textarea
             value={besoin.fichePoste}
             onChange={(e) => up("fichePoste", e.target.value)}
-            placeholder="Collez ici la fiche de poste…"
+            placeholder="Collez ici la fiche de poste — ou glissez un PDF…"
             rows={7}
           />
           <div className="file-row" style={{ marginTop: 4 }}>
@@ -217,16 +237,16 @@ export default function BesoinForm({
           <hr className="rule" />
           <p className="eyebrow">Qualification IA</p>
 
-          <div className="panel" style={{ marginTop: 24 }}>
+          <Reveal className="panel" style={{ marginTop: 24 }}>
             <div className="kicker">Le besoin en 5 lignes</div>
             <ul className="lede-list">
               {analysis.resume.map((l, i) => (
                 <li key={i}>{l}</li>
               ))}
             </ul>
-          </div>
+          </Reveal>
 
-          <div className="two-col" style={{ marginTop: 24 }}>
+          <Reveal className="two-col" style={{ marginTop: 24 }}>
             <div className="panel">
               <div className="kicker">Compétences indispensables</div>
               <div className="chips">
@@ -247,9 +267,9 @@ export default function BesoinForm({
                 ))}
               </div>
             </div>
-          </div>
+          </Reveal>
 
-          <div className="two-col" style={{ marginTop: 24 }}>
+          <Reveal className="two-col" style={{ marginTop: 24 }}>
             <div className="panel">
               <div className="kicker">Points de vigilance</div>
               <ul className="bullets vig">
@@ -267,7 +287,7 @@ export default function BesoinForm({
                 {analysis.typeProfil}
               </p>
             </div>
-          </div>
+          </Reveal>
 
           <div className="actions">
             <button className="cta ghost" onClick={onContinue}>
