@@ -429,7 +429,7 @@ export default function Page() {
         )}
 
         <footer className="foot">
-          <span>Skills® v3.2 — Hackathon TDU</span>
+          <span>Skills® v3.3 — Hackathon TDU</span>
           <span>Propulsé par Claude · Opus 4.8</span>
         </footer>
       </main>
