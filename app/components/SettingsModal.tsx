@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { USER_KEY_STORAGE } from "@/lib/api";
+import { USER_KEY_STORAGE, callAI } from "@/lib/api";
 
 export default function SettingsModal({
   onClose,
@@ -17,21 +17,44 @@ export default function SettingsModal({
       ? window.localStorage.getItem(USER_KEY_STORAGE) || ""
       : "",
   );
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(
+    null,
+  );
 
-  function save() {
+  function persist() {
     if (value.trim()) {
       window.localStorage.setItem(USER_KEY_STORAGE, value.trim());
     } else {
       window.localStorage.removeItem(USER_KEY_STORAGE);
     }
     onSaved();
+  }
+
+  function save() {
+    persist();
     onClose();
   }
 
   function clear() {
     window.localStorage.removeItem(USER_KEY_STORAGE);
     setValue("");
+    setTestMsg(null);
     onSaved();
+  }
+
+  async function test() {
+    persist();
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      await callAI("ping", {});
+      setTestMsg({ ok: true, text: "Connexion établie — la clé fonctionne." });
+    } catch (e: any) {
+      setTestMsg({ ok: false, text: e.message || "Échec de la connexion." });
+    } finally {
+      setTesting(false);
+    }
   }
 
   return (
@@ -50,13 +73,30 @@ export default function SettingsModal({
             type="password"
             value={value}
             placeholder="sk-ant-..."
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setTestMsg(null);
+            }}
             autoFocus
           />
         </div>
+
+        {testMsg && (
+          <div className={"test-msg " + (testMsg.ok ? "ok" : "err")}>
+            {testMsg.ok ? "✓" : "!"} {testMsg.text}
+          </div>
+        )}
+
         <div className="actions">
           <button className="cta" onClick={save}>
             Enregistrer
+          </button>
+          <button
+            className="cta ghost sm"
+            onClick={test}
+            disabled={testing || (!value.trim() && !hasServerKey)}
+          >
+            {testing ? "Test en cours…" : "Tester la clé"}
           </button>
           <button className="link-btn" onClick={clear}>
             Effacer

@@ -1006,3 +1006,190 @@ textarea {
 .fade-in {
   animation: rise 0.5s var(--ease) both;
 }
+
+/* --------------------------------------------------------------- v2 additions */
+
+.cta.sm {
+  padding: 13px 26px;
+  font-size: 11px;
+}
+
+.hero-actions {
+  margin-top: 34px;
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* stepper check sur les onglets */
+.tab-check {
+  font-size: 11px;
+  color: var(--grey-600);
+  margin-left: 2px;
+}
+.tab.active .tab-check {
+  color: var(--ink);
+}
+
+/* en-tête de carte CV + statut live */
+.cv-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.status-ok {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.status-err {
+  font-family: "Playfair Display", serif;
+  font-style: italic;
+  font-weight: 700;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+
+/* jauge de score */
+.gauge {
+  position: relative;
+  height: 8px;
+  width: min(220px, 60vw);
+  background: var(--grey-200);
+  border-radius: 4px;
+  margin-top: 16px;
+}
+.gauge-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--ink);
+  border-radius: 4px;
+  transition: width 0.9s var(--ease);
+}
+.gauge-val {
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-family: "Playfair Display", serif;
+  font-style: italic;
+  font-size: 16px;
+}
+
+/* couverture de compétences */
+.coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.chip.cov {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+}
+.chip.cov .ck {
+  font-weight: 700;
+  margin-right: 4px;
+}
+.chip.miss {
+  border: 1px solid var(--grey-300);
+  background: var(--grey-100);
+  color: var(--grey-600);
+}
+.chip.miss .ck {
+  margin-right: 4px;
+}
+
+/* test de clé */
+.test-msg {
+  margin-top: 18px;
+  font-size: 13.5px;
+  padding: 12px 16px;
+  border: 1px solid var(--ink);
+  line-height: 1.45;
+}
+.test-msg.err {
+  background: var(--grey-100);
+}
+
+.doc-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+/* --------------------------------------------------------------- Responsive */
+
+@media (max-width: 600px) {
+  .shell {
+    padding: 0 18px 80px;
+  }
+  .masthead-inner {
+    padding: 14px 18px;
+  }
+  .hero {
+    padding: 40px 0 28px;
+  }
+  .panel {
+    padding: 24px;
+  }
+  .doc {
+    padding: 28px;
+  }
+  .tab {
+    padding: 16px 20px 14px 0;
+    margin-right: 26px;
+  }
+  .rank-no {
+    font-size: 42px;
+  }
+}
+
+/* --------------------------------------------------------------- Print */
+
+@media print {
+  .masthead,
+  .hero,
+  .tabs,
+  .foot,
+  .section-head,
+  .actions,
+  .alert,
+  .empty,
+  .no-print,
+  .rule {
+    display: none !important;
+  }
+  body {
+    font-size: 12px;
+    color: #000;
+  }
+  .shell {
+    padding: 0;
+    max-width: none;
+  }
+  .result {
+    animation: none;
+    margin-top: 0 !important;
+  }
+  .doc {
+    box-shadow: none;
+    border: 1px solid #000;
+    background: #fff;
+    padding: 24px;
+    break-inside: avoid;
+  }
+  .doc + .doc {
+    margin-top: 16px;
+  }
+}

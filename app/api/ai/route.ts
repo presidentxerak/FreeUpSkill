@@ -42,6 +42,7 @@ const matchingSchema = {
   properties: {
     candidat: { type: "string" },
     score: { type: "string", enum: ["Fort", "Moyen", "Faible"] },
+    scoreSur100: { type: "integer" },
     recommandation: {
       type: "string",
       enum: ["À appeler en priorité", "Backup", "À écarter"],
@@ -50,6 +51,8 @@ const matchingSchema = {
     pointsForts: { type: "array", items: { type: "string" } },
     pointsVigilance: { type: "array", items: { type: "string" } },
     questionsCles: { type: "array", items: { type: "string" } },
+    competencesCouvertes: { type: "array", items: { type: "string" } },
+    competencesManquantes: { type: "array", items: { type: "string" } },
     anneesExperience: { type: "string" },
     disponibilite: { type: "string" },
     tjmEstime: { type: "string" },
@@ -57,11 +60,14 @@ const matchingSchema = {
   required: [
     "candidat",
     "score",
+    "scoreSur100",
     "recommandation",
     "synthese",
     "pointsForts",
     "pointsVigilance",
     "questionsCles",
+    "competencesCouvertes",
+    "competencesManquantes",
     "anneesExperience",
     "disponibilite",
     "tjmEstime",
@@ -212,6 +218,112 @@ function extractJson(raw: string): unknown {
   return undefined;
 }
 
+// --- Coercition défensive : le front ne doit jamais planter sur un champ
+// manquant ou mal typé, même si le modèle dévie du schéma. ---
+
+const str = (v: any, def = ""): string =>
+  typeof v === "string" ? v : v == null ? def : String(v);
+
+const arr = (v: any): string[] => {
+  if (Array.isArray(v)) return v.filter((x) => x != null).map((x) => String(x));
+  if (v == null || v === "") return [];
+  return [String(v)];
+};
+
+const clampInt = (v: any, def: number): number => {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return def;
+  return Math.max(0, Math.min(100, n));
+};
+
+const ENUM_SCORE = ["Fort", "Moyen", "Faible"];
+const ENUM_RECO = ["À appeler en priorité", "Backup", "À écarter"];
+const oneOf = (v: any, allowed: string[], def: string) =>
+  allowed.includes(v) ? v : def;
+
+function normalize(task: string, d: any, payload: any): any {
+  d = d && typeof d === "object" ? d : {};
+  if (task === "analyze_besoin") {
+    return {
+      resume: arr(d.resume),
+      competencesIndispensables: arr(d.competencesIndispensables),
+      competencesSecondaires: arr(d.competencesSecondaires),
+      pointsVigilance: arr(d.pointsVigilance),
+      typeProfil: str(d.typeProfil),
+    };
+  }
+  if (task === "match_cv") {
+    const score = oneOf(d.score, ENUM_SCORE, "Moyen");
+    const scoreDefault = score === "Fort" ? 80 : score === "Faible" ? 30 : 58;
+    return {
+      candidat: str(d.candidat, payload?.cvLabel || "Candidat"),
+      score,
+      scoreSur100: clampInt(d.scoreSur100, scoreDefault),
+      recommandation: oneOf(d.recommandation, ENUM_RECO, "Backup"),
+      synthese: str(d.synthese),
+      pointsForts: arr(d.pointsForts),
+      pointsVigilance: arr(d.pointsVigilance),
+      questionsCles: arr(d.questionsCles),
+      competencesCouvertes: arr(d.competencesCouvertes),
+      competencesManquantes: arr(d.competencesManquantes),
+      anneesExperience: str(d.anneesExperience, "À confirmer"),
+      disponibilite: str(d.disponibilite, "À confirmer"),
+      tjmEstime: str(d.tjmEstime, "À estimer"),
+    };
+  }
+  if (task === "rank_candidates") {
+    const classement = Array.isArray(d.classement) ? d.classement : [];
+    return {
+      classement: classement.map((c: any, i: number) => ({
+        candidat: str(c?.candidat, `Candidat ${i + 1}`),
+        rang: Number.isFinite(Number(c?.rang)) ? Number(c.rang) : i + 1,
+        label: str(c?.label),
+        forces: str(c?.forces),
+        blocages: str(c?.blocages),
+        action: str(c?.action),
+      })),
+      synthese: str(d.synthese),
+    };
+  }
+  if (task === "generate_brief") {
+    const b = d.briefClient && typeof d.briefClient === "object" ? d.briefClient : {};
+    return {
+      briefClient: {
+        prenom: str(b.prenom, "Candidat"),
+        accroche: str(b.accroche),
+        resumeExperiences: str(b.resumeExperiences),
+        pointsForts: arr(b.pointsForts),
+        pointsVigilance: arr(b.pointsVigilance),
+        anneesExperience: str(b.anneesExperience, "À confirmer"),
+        competencesCles: arr(b.competencesCles),
+        disponibilite: str(b.disponibilite, "À confirmer"),
+        tjm: str(b.tjm, "À estimer"),
+      },
+      pitchMission: str(d.pitchMission),
+    };
+  }
+  return d;
+}
+
+async function createWithRetry(client: Anthropic, params: any, tries = 3) {
+  let lastErr: any;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await client.messages.create(params);
+    } catch (e: any) {
+      lastErr = e;
+      const s = e?.status;
+      const retryable = s === 429 || s === 529 || (s >= 500 && s < 600);
+      if (i < tries - 1 && retryable) {
+        await new Promise((r) => setTimeout(r, 700 * Math.pow(2, i)));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
@@ -241,6 +353,15 @@ export async function POST(req: Request) {
   const client = new Anthropic({ apiKey });
 
   try {
+    if (task === "ping") {
+      await client.messages.create({
+        model: MODEL,
+        max_tokens: 8,
+        messages: [{ role: "user", content: "Réponds simplement: ok" }],
+      } as any);
+      return Response.json({ data: { ok: true } });
+    }
+
     let userContent: any[] = [];
     let schema: any;
 
@@ -278,11 +399,14 @@ ${payload?.cvText?.trim() || "(voir document PDF joint)"}
 Produis un matching métier :
 - candidat : prénom du candidat si présent dans le CV, sinon "${payload?.cvLabel || "Candidat"}"
 - score : Fort / Moyen / Faible (adéquation globale au besoin)
+- scoreSur100 : un entier 0-100 reflétant finement l'adéquation (cohérent avec le score : Fort ≈ 75-100, Moyen ≈ 45-74, Faible ≈ 0-44)
 - recommandation : "À appeler en priorité" / "Backup" / "À écarter"
 - synthese : 2 phrases qui justifient le score et la reco
 - pointsForts : exactement 3 points forts vis-à-vis du besoin
 - pointsVigilance : exactement 3 points de vigilance / risques (inclure les alertes liées à l'historique opérationnel le cas échéant)
 - questionsCles : 3 à 5 questions précises à poser au candidat lors du call de qualification
+- competencesCouvertes : parmi les compétences INDISPENSABLES du besoin, celles que le CV démontre clairement
+- competencesManquantes : parmi les compétences INDISPENSABLES du besoin, celles absentes ou insuffisamment démontrées
 - anneesExperience : estimation des années d'XP pertinentes
 - disponibilite : si déductible du CV, sinon "À confirmer"
 - tjmEstime : fourchette TJM marché FR cohérente avec le profil, marquée comme estimation`,
@@ -339,9 +463,9 @@ Produis :
       output_config: { format: { type: "json_schema", schema } },
     };
 
-    const response = await client.messages.create(params);
+    const response = await createWithRetry(client, params);
 
-    const textBlock = response.content.find(
+    const textBlock = (response.content as any[]).find(
       (b: any) => b.type === "text",
     ) as any;
 
@@ -352,14 +476,15 @@ Produis :
       );
     }
 
-    const data = extractJson(textBlock.text);
-    if (data === undefined) {
+    const parsed = extractJson(textBlock.text);
+    if (parsed === undefined) {
       return Response.json(
-        { error: "Réponse IA non exploitable." },
+        { error: "Réponse IA non exploitable. Réessayez." },
         { status: 502 },
       );
     }
 
+    const data = normalize(task, parsed, payload);
     return Response.json({ data });
   } catch (err: any) {
     const message =

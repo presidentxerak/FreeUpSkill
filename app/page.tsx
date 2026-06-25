@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   BesoinInput,
   BesoinAnalysis,
@@ -10,12 +10,20 @@ import type {
   BriefOutput,
 } from "@/lib/types";
 import { callAI, USER_KEY_STORAGE } from "@/lib/api";
+import {
+  saveState,
+  loadState,
+  clearState,
+  type Result,
+} from "@/lib/storage";
+import { demoBesoin, demoCvs } from "@/lib/demo";
 import SettingsModal from "./components/SettingsModal";
 import BesoinForm from "./components/BesoinForm";
 import CvSection from "./components/CvSection";
 import OutputsDashboard from "./components/OutputsDashboard";
 
 type Tab = "besoin" | "cvs" | "outputs";
+export type MatchStatus = "running" | "done" | "error";
 
 const emptyBesoin: BesoinInput = {
   client: "",
@@ -27,16 +35,11 @@ const emptyBesoin: BesoinInput = {
   historiqueOperationnel: "",
 };
 
-const initialCvs: CvSource[] = [
+const freshCvs = (): CvSource[] => [
   { id: "cv-a", label: "Candidat A", text: "" },
   { id: "cv-b", label: "Candidat B", text: "" },
   { id: "cv-c", label: "Candidat C", text: "" },
 ];
-
-interface Result {
-  cvId: string;
-  matching: CvMatching;
-}
 
 export default function Page() {
   const [tab, setTab] = useState<Tab>("besoin");
@@ -53,11 +56,13 @@ export default function Page() {
   const [besoinError, setBesoinError] = useState<string | null>(null);
 
   // CVs
-  const [cvs, setCvs] = useState<CvSource[]>(initialCvs);
+  const [cvs, setCvs] = useState<CvSource[]>(freshCvs());
   const [results, setResults] = useState<Result[] | null>(null);
   const [ranking, setRanking] = useState<Ranking | null>(null);
   const [matchLoading, setMatchLoading] = useState(false);
-  const [matchProgress, setMatchProgress] = useState("");
+  const [matchStatus, setMatchStatus] = useState<Record<string, MatchStatus>>(
+    {},
+  );
   const [matchError, setMatchError] = useState<string | null>(null);
 
   // Outputs
@@ -65,7 +70,23 @@ export default function Page() {
   const [briefLoading, setBriefLoading] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
 
+  const hydrated = useRef(false);
+
+  // --- Hydratation depuis localStorage + détection clé serveur ---
   useEffect(() => {
+    const s = loadState();
+    if (s) {
+      setTab((s.tab as Tab) || "besoin");
+      setBesoin(s.besoin || emptyBesoin);
+      setFicheName(s.ficheName || "");
+      setAnalysis(s.analysis ?? null);
+      setCvs(s.cvs && s.cvs.length ? s.cvs : freshCvs());
+      setResults(s.results ?? null);
+      setRanking(s.ranking ?? null);
+      setBrief(s.brief ?? null);
+    }
+    hydrated.current = true;
+
     fetch("/api/ai")
       .then((r) => r.json())
       .then((j) => setHasServerKey(Boolean(j?.hasServerKey)))
@@ -78,27 +99,36 @@ export default function Page() {
     );
   }, []);
 
+  // --- Sauvegarde automatique ---
+  useEffect(() => {
+    if (!hydrated.current) return;
+    saveState({
+      tab,
+      besoin,
+      ficheName,
+      analysis,
+      cvs,
+      results,
+      ranking,
+      brief,
+    });
+  }, [tab, besoin, ficheName, analysis, cvs, results, ranking, brief]);
+
   function refreshKey() {
-    setHasUserKey(
-      Boolean(window.localStorage.getItem(USER_KEY_STORAGE)),
-    );
+    setHasUserKey(Boolean(window.localStorage.getItem(USER_KEY_STORAGE)));
   }
 
   const keyReady = hasServerKey || hasUserKey;
 
-  function besoinPayload() {
-    return { besoin, fichePdfBase64: fichePdf };
-  }
-
-  // ---- Étape 1 ----
+  // --- Étape 1 ---
   async function analyzeBesoin() {
     setBesoinLoading(true);
     setBesoinError(null);
     try {
-      const data = await callAI<BesoinAnalysis>(
-        "analyze_besoin",
-        besoinPayload(),
-      );
+      const data = await callAI<BesoinAnalysis>("analyze_besoin", {
+        besoin,
+        fichePdfBase64: fichePdf,
+      });
       setAnalysis(data);
     } catch (e: any) {
       setBesoinError(e.message);
@@ -107,49 +137,75 @@ export default function Page() {
     }
   }
 
-  // ---- Étape 2 ----
+  // --- Étape 2 : matching en parallèle ---
   async function runMatching() {
     const filled = cvs.filter((c) => c.text.trim().length > 0 || c.pdfBase64);
+    if (filled.length === 0) return;
+
     setMatchLoading(true);
     setMatchError(null);
     setResults(null);
     setRanking(null);
     setBrief(null);
-    try {
-      const res: Result[] = [];
-      for (let i = 0; i < filled.length; i++) {
-        const cv = filled[i];
-        setMatchProgress(`Analyse ${i + 1}/${filled.length} — ${cv.label}`);
-        const matching = await callAI<CvMatching>("match_cv", {
-          besoin,
-          cvLabel: cv.label,
-          cvText: cv.text,
-          cvPdfBase64: cv.pdfBase64,
-        });
-        res.push({ cvId: cv.id, matching });
-      }
-      setResults(res);
 
-      if (res.length > 1) {
-        setMatchProgress("Classement comparatif…");
+    const initStatus: Record<string, MatchStatus> = {};
+    filled.forEach((c) => (initStatus[c.id] = "running"));
+    setMatchStatus(initStatus);
+
+    const settled = await Promise.all(
+      filled.map(async (cv): Promise<Result | null> => {
+        try {
+          const matching = await callAI<CvMatching>("match_cv", {
+            besoin,
+            cvLabel: cv.label,
+            cvText: cv.text,
+            cvPdfBase64: cv.pdfBase64,
+          });
+          setMatchStatus((s) => ({ ...s, [cv.id]: "done" }));
+          return { cvId: cv.id, matching };
+        } catch {
+          setMatchStatus((s) => ({ ...s, [cv.id]: "error" }));
+          return null;
+        }
+      }),
+    );
+
+    const res = settled.filter((r): r is Result => r !== null);
+
+    if (res.length === 0) {
+      setMatchError(
+        "Aucun CV n'a pu être analysé. Vérifiez votre clé API et réessayez.",
+      );
+      setMatchLoading(false);
+      return;
+    }
+
+    setResults(res);
+
+    if (res.length > 1) {
+      try {
         const rank = await callAI<Ranking>("rank_candidates", {
           besoin,
           matchings: res.map((r) => r.matching),
         });
         setRanking(rank);
+      } catch {
+        /* le ranking est un plus : on n'échoue pas le matching pour autant */
       }
-    } catch (e: any) {
-      setMatchError(e.message);
-    } finally {
-      setMatchLoading(false);
-      setMatchProgress("");
     }
+
+    if (res.length < filled.length) {
+      setMatchError(
+        `${filled.length - res.length} CV n'a pas pu être analysé. Les autres résultats sont disponibles.`,
+      );
+    }
+    setMatchLoading(false);
   }
 
-  // ---- Best candidate ----
+  // --- Meilleur candidat ---
   function bestResult(): Result | null {
     if (!results || results.length === 0) return null;
-    if (ranking) {
+    if (ranking && ranking.classement.length) {
       const top = [...ranking.classement].sort((a, b) => a.rang - b.rang)[0];
       if (top) {
         const found = results.find(
@@ -163,13 +219,12 @@ export default function Page() {
         if (found) return found;
       }
     }
-    const order = (s: string) => (s === "Fort" ? 0 : s === "Moyen" ? 1 : 2);
     return [...results].sort(
-      (a, b) => order(a.matching.score) - order(b.matching.score),
+      (a, b) => b.matching.scoreSur100 - a.matching.scoreSur100,
     )[0];
   }
 
-  // ---- Étape 3 ----
+  // --- Étape 3 ---
   async function generateBrief() {
     const best = bestResult();
     if (!best) return;
@@ -191,6 +246,54 @@ export default function Page() {
     }
   }
 
+  // --- Démo & reset ---
+  function loadDemo() {
+    setBesoin(JSON.parse(JSON.stringify(demoBesoin)));
+    setFichePdf(undefined);
+    setFicheName("");
+    setAnalysis(null);
+    setCvs(
+      freshCvs().map((c, i) => ({
+        ...c,
+        label: demoCvs[i]?.label ?? c.label,
+        text: demoCvs[i]?.text ?? "",
+        pdfBase64: undefined,
+        pdfName: undefined,
+      })),
+    );
+    setResults(null);
+    setRanking(null);
+    setBrief(null);
+    setBesoinError(null);
+    setMatchError(null);
+    setBriefError(null);
+    setTab("besoin");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function resetAll() {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Tout effacer et repartir d'une page vierge ?")
+    )
+      return;
+    clearState();
+    setBesoin(emptyBesoin);
+    setFichePdf(undefined);
+    setFicheName("");
+    setAnalysis(null);
+    setCvs(freshCvs());
+    setResults(null);
+    setRanking(null);
+    setBrief(null);
+    setMatchStatus({});
+    setBesoinError(null);
+    setMatchError(null);
+    setBriefError(null);
+    setTab("besoin");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function goTab(t: Tab) {
     setTab(t);
     if (typeof window !== "undefined")
@@ -198,6 +301,11 @@ export default function Page() {
   }
 
   const best = bestResult();
+  const stepDone = {
+    besoin: Boolean(analysis),
+    cvs: Boolean(results && results.length),
+    outputs: Boolean(brief),
+  };
 
   return (
     <>
@@ -231,35 +339,34 @@ export default function Page() {
             de CV en décisions de priorisation — en quelques secondes, pas en
             une demi-journée.
           </p>
-          <div className="hero-meta">
-            <span>01 — Besoin</span>
-            <span>02 — Matching CV</span>
-            <span>03 — Brief & Pitch</span>
+          <div className="hero-actions">
+            <button className="cta sm" onClick={loadDemo}>
+              Charger l'exemple TDU
+            </button>
+            <button className="link-btn" onClick={resetAll}>
+              Réinitialiser
+            </button>
           </div>
         </section>
 
         <nav className="tabs">
-          <button
-            className={"tab" + (tab === "besoin" ? " active" : "")}
-            onClick={() => goTab("besoin")}
-          >
-            <span className="num">i.</span>
-            <span className="lab">Besoin</span>
-          </button>
-          <button
-            className={"tab" + (tab === "cvs" ? " active" : "")}
-            onClick={() => goTab("cvs")}
-          >
-            <span className="num">ii.</span>
-            <span className="lab">CV & Matching</span>
-          </button>
-          <button
-            className={"tab" + (tab === "outputs" ? " active" : "")}
-            onClick={() => goTab("outputs")}
-          >
-            <span className="num">iii.</span>
-            <span className="lab">Livrables</span>
-          </button>
+          {(
+            [
+              ["besoin", "i.", "Besoin"],
+              ["cvs", "ii.", "CV & Matching"],
+              ["outputs", "iii.", "Livrables"],
+            ] as [Tab, string, string][]
+          ).map(([id, num, lab]) => (
+            <button
+              key={id}
+              className={"tab" + (tab === id ? " active" : "")}
+              onClick={() => goTab(id)}
+            >
+              <span className="num">{num}</span>
+              <span className="lab">{lab}</span>
+              {stepDone[id] && <span className="tab-check">✓</span>}
+            </button>
+          ))}
         </nav>
 
         {!keyReady && (
@@ -301,7 +408,7 @@ export default function Page() {
             setCvs={setCvs}
             onMatch={runMatching}
             loading={matchLoading}
-            progress={matchProgress}
+            status={matchStatus}
             matchings={results ? results.map((r) => r.matching) : null}
             ranking={ranking}
             error={matchError}

@@ -1,6 +1,7 @@
 "use client";
 
 import type { CvSource, CvMatching, Ranking } from "@/lib/types";
+import type { MatchStatus } from "../page";
 import { readFileAsBase64, readFileAsText } from "@/lib/api";
 
 interface Props {
@@ -8,7 +9,7 @@ interface Props {
   setCvs: (c: CvSource[]) => void;
   onMatch: () => void;
   loading: boolean;
-  progress: string;
+  status: Record<string, MatchStatus>;
   matchings: CvMatching[] | null;
   ranking: Ranking | null;
   error: string | null;
@@ -25,7 +26,7 @@ export default function CvSection({
   setCvs,
   onMatch,
   loading,
-  progress,
+  status,
   matchings,
   ranking,
   error,
@@ -60,8 +61,9 @@ export default function CvSection({
         <h2 className="serif">Analyse & matching des CV</h2>
         <p>
           Importez la shortlist établie par le recruteur (jusqu'à 3 candidats).
-          L'IA score chaque profil face au besoin, le situe par rapport à
-          l'historique opérationnel, et prépare vos questions de call.
+          L'IA score chaque profil face au besoin, mesure la couverture des
+          compétences indispensables, le situe par rapport à l'historique
+          opérationnel et prépare vos questions de call.
         </p>
       </div>
 
@@ -76,37 +78,43 @@ export default function CvSection({
       )}
 
       <div className="cv-stack">
-        {cvs.map((cv, i) => (
-          <div className="cv-card" key={cv.id}>
-            <input
-              className="editable-name"
-              value={cv.label}
-              onChange={(e) => update(cv.id, { label: e.target.value })}
-            />
-            <textarea
-              value={cv.text}
-              onChange={(e) =>
-                update(cv.id, { text: e.target.value, pdfBase64: undefined })
-              }
-              placeholder={`Collez le CV ${i + 1}…`}
-              rows={7}
-            />
-            <div className="file-row">
-              <label className="file-label">
-                Importer
+        {cvs.map((cv, i) => {
+          const st = status[cv.id];
+          return (
+            <div className="cv-card" key={cv.id}>
+              <div className="cv-card-top">
                 <input
-                  type="file"
-                  accept=".pdf,.txt,.md"
-                  hidden
-                  onChange={(e) => handleFile(cv.id, e)}
+                  className="editable-name"
+                  value={cv.label}
+                  onChange={(e) => update(cv.id, { label: e.target.value })}
                 />
-              </label>
-              {cv.pdfName && (
-                <span className="file-name">— {cv.pdfName}</span>
-              )}
+                {st === "running" && <span className="spinner" />}
+                {st === "done" && <span className="status-ok">✓</span>}
+                {st === "error" && <span className="status-err">!</span>}
+              </div>
+              <textarea
+                value={cv.text}
+                onChange={(e) =>
+                  update(cv.id, { text: e.target.value, pdfBase64: undefined })
+                }
+                placeholder={`Collez le CV ${i + 1}…`}
+                rows={7}
+              />
+              <div className="file-row">
+                <label className="file-label">
+                  Importer
+                  <input
+                    type="file"
+                    accept=".pdf,.txt,.md"
+                    hidden
+                    onChange={(e) => handleFile(cv.id, e)}
+                  />
+                </label>
+                {cv.pdfName && <span className="file-name">— {cv.pdfName}</span>}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="actions">
@@ -115,7 +123,7 @@ export default function CvSection({
         </button>
         {loading && (
           <span className="loading-note">
-            <span className="spinner" /> {progress || "Analyse des profils…"}
+            <span className="spinner" /> Analyse des profils en parallèle…
           </span>
         )}
       </div>
@@ -131,15 +139,17 @@ export default function CvSection({
         <div className="result" style={{ marginTop: 56 }}>
           <hr className="rule" />
 
-          {ranking && (
+          {ranking && ranking.classement.length > 1 && (
             <div style={{ marginBottom: 56 }}>
               <p className="eyebrow">Classement comparatif</p>
-              <p
-                className="synthese"
-                style={{ marginTop: 16, marginBottom: 4 }}
-              >
-                {ranking.synthese}
-              </p>
+              {ranking.synthese && (
+                <p
+                  className="synthese"
+                  style={{ marginTop: 16, marginBottom: 4 }}
+                >
+                  {ranking.synthese}
+                </p>
+              )}
               <div style={{ marginTop: 24 }}>
                 {[...ranking.classement]
                   .sort((a, b) => a.rang - b.rang)
@@ -149,21 +159,27 @@ export default function CvSection({
                       <div className="rank-body">
                         <h4 className="serif">
                           {r.candidat}
-                          <span className="tag">{r.label}</span>
+                          {r.label && <span className="tag">{r.label}</span>}
                         </h4>
                         <div className="rank-detail">
-                          <div className="dl">
-                            <span className="dk">Forces</span>
-                            <span>{r.forces}</span>
-                          </div>
-                          <div className="dl">
-                            <span className="dk">Blocages</span>
-                            <span>{r.blocages}</span>
-                          </div>
-                          <div className="dl">
-                            <span className="dk">Action</span>
-                            <span>{r.action}</span>
-                          </div>
+                          {r.forces && (
+                            <div className="dl">
+                              <span className="dk">Forces</span>
+                              <span>{r.forces}</span>
+                            </div>
+                          )}
+                          {r.blocages && (
+                            <div className="dl">
+                              <span className="dk">Blocages</span>
+                              <span>{r.blocages}</span>
+                            </div>
+                          )}
+                          {r.action && (
+                            <div className="dl">
+                              <span className="dk">Action</span>
+                              <span>{r.action}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -181,6 +197,13 @@ export default function CvSection({
                   <div className="match-head">
                     <div>
                       <h3 className="serif">{m.candidat}</h3>
+                      <div className="gauge">
+                        <div
+                          className="gauge-fill"
+                          style={{ width: `${m.scoreSur100}%` }}
+                        />
+                        <span className="gauge-val">{m.scoreSur100}/100</span>
+                      </div>
                     </div>
                     <div className="score-badge">
                       <div className="score">{m.score}</div>
@@ -199,7 +222,28 @@ export default function CvSection({
                     </div>
                   </div>
 
-                  <p className="synthese">{m.synthese}</p>
+                  {m.synthese && <p className="synthese">{m.synthese}</p>}
+
+                  {(m.competencesCouvertes.length > 0 ||
+                    m.competencesManquantes.length > 0) && (
+                    <div style={{ marginBottom: 28 }}>
+                      <div className="kicker">
+                        Couverture des compétences indispensables
+                      </div>
+                      <div className="coverage">
+                        {m.competencesCouvertes.map((c, j) => (
+                          <span key={"k" + j} className="chip cov">
+                            <span className="ck">✓</span> {c}
+                          </span>
+                        ))}
+                        {m.competencesManquantes.map((c, j) => (
+                          <span key={"m" + j} className="chip miss">
+                            <span className="ck">✕</span> {c}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="two-col">
                     <div>
@@ -220,14 +264,16 @@ export default function CvSection({
                     </div>
                   </div>
 
-                  <div style={{ marginTop: 28 }}>
-                    <div className="kicker">Questions clés pour le call</div>
-                    <ul className="bullets q">
-                      {m.questionsCles.map((q, j) => (
-                        <li key={j}>{q}</li>
-                      ))}
-                    </ul>
-                  </div>
+                  {m.questionsCles.length > 0 && (
+                    <div style={{ marginTop: 28 }}>
+                      <div className="kicker">Questions clés pour le call</div>
+                      <ul className="bullets q">
+                        {m.questionsCles.map((q, j) => (
+                          <li key={j}>{q}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
                   <div className="meta-row">
                     <div className="meta-item">

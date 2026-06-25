@@ -34,11 +34,14 @@ export type Recommandation =
 export interface CvMatching {
   candidat: string; // prénom ou identifiant
   score: ScoreMatching;
+  scoreSur100: number; // 0-100, pour la jauge
   recommandation: Recommandation;
   synthese: string;
   pointsForts: string[]; // 3
   pointsVigilance: string[]; // 3
   questionsCles: string[];
+  competencesCouvertes: string[]; // compétences indispensables couvertes
+  competencesManquantes: string[]; // compétences indispensables absentes
   anneesExperience: string;
   disponibilite: string;
   tjmEstime: string;

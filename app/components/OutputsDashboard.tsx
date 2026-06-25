@@ -75,7 +75,12 @@ export default function OutputsDashboard({
       )}
 
       {brief && (
-        <div className="result" style={{ marginTop: 48 }}>
+        <div className="result print-area" style={{ marginTop: 48 }}>
+          <div className="doc-toolbar no-print">
+            <button className="link-btn" onClick={() => window.print()}>
+              Imprimer / Exporter en PDF
+            </button>
+          </div>
           {/* BRIEF CLIENT */}
           <div className="doc">
             <div className="doc-head">
