@@ -2,13 +2,26 @@
 
 export const USER_KEY_STORAGE = "skills_anthropic_key";
 
+// Une clé API ne contient aucun espace ni saut de ligne : on neutralise tout
+// caractère blanc pour qu'un copier-coller malheureux ne fasse jamais planter
+// la construction des en-têtes fetch ("invalid header value").
+export function sanitizeKey(k: string | null | undefined): string {
+  return (k || "").replace(/\s+/g, "");
+}
+
+// Une clé Anthropic valide commence par "sk-ant-".
+export function looksLikeKey(k: string): boolean {
+  const clean = sanitizeKey(k);
+  return /^sk-ant-/.test(clean) && clean.length > 20;
+}
+
 export async function callAI<T>(task: string, payload: unknown): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
 
   if (typeof window !== "undefined") {
-    const userKey = window.localStorage.getItem(USER_KEY_STORAGE);
+    const userKey = sanitizeKey(window.localStorage.getItem(USER_KEY_STORAGE));
     if (userKey) headers["x-user-api-key"] = userKey;
   }
 

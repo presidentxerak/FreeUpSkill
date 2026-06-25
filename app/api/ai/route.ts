@@ -332,8 +332,13 @@ async function createWithRetry(client: Anthropic, params: any, tries = 3) {
 // ---------------------------------------------------------------------------
 
 export async function POST(req: Request) {
-  const apiKey =
-    req.headers.get("x-user-api-key") || process.env.ANTHROPIC_API_KEY;
+  // On retire tout espace / saut de ligne : une clé valide n'en contient pas,
+  // et cela évite le crash "invalid header value" sur un copier-coller foireux.
+  const apiKey = (
+    req.headers.get("x-user-api-key") ||
+    process.env.ANTHROPIC_API_KEY ||
+    ""
+  ).replace(/\s+/g, "");
 
   if (!apiKey) {
     return Response.json(
@@ -490,11 +495,26 @@ Produis :
     const data = normalize(task, parsed, payload);
     return Response.json({ data });
   } catch (err: any) {
-    const message =
+    const raw =
       err?.error?.error?.message ||
       err?.message ||
       "Erreur lors de l'appel à l'IA.";
-    const status = err?.status && Number.isInteger(err.status) ? err.status : 500;
+    const status =
+      err?.status && Number.isInteger(err.status) ? err.status : 500;
+
+    let message = raw;
+    const low = String(raw).toLowerCase();
+    if (status === 401 || low.includes("authentication") || low.includes("x-api-key")) {
+      message =
+        "Clé API invalide ou révoquée. Vérifiez votre clé (format sk-ant-…) dans Réglages, ou la variable ANTHROPIC_API_KEY de votre déploiement.";
+    } else if (low.includes("invalid header") || low.includes("headers.append")) {
+      message =
+        "Clé API invalide : elle contient des caractères non autorisés. Recollez uniquement votre clé sk-ant-…, sans espace ni saut de ligne.";
+    } else if (status === 429) {
+      message = "Limite de requêtes atteinte. Patientez quelques secondes puis réessayez.";
+    } else if (status === 529 || status >= 500) {
+      message = "Service IA momentanément surchargé. Réessayez dans un instant.";
+    }
     return Response.json({ error: message }, { status });
   }
 }

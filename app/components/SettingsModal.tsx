@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { USER_KEY_STORAGE, callAI } from "@/lib/api";
+import {
+  USER_KEY_STORAGE,
+  callAI,
+  sanitizeKey,
+  looksLikeKey,
+} from "@/lib/api";
 
 export default function SettingsModal({
   onClose,
@@ -22,18 +27,28 @@ export default function SettingsModal({
     null,
   );
 
-  function persist() {
-    if (value.trim()) {
-      window.localStorage.setItem(USER_KEY_STORAGE, value.trim());
-    } else {
+  // Renvoie true si la valeur est OK (ou vide), false si elle est invalide.
+  function persist(): boolean {
+    const clean = sanitizeKey(value);
+    if (!clean) {
       window.localStorage.removeItem(USER_KEY_STORAGE);
+      onSaved();
+      return true;
     }
+    if (!looksLikeKey(clean)) {
+      setTestMsg({
+        ok: false,
+        text: "Ceci ne ressemble pas à une clé API. Collez uniquement votre clé (elle commence par sk-ant-…), pas une commande curl, une URL ni un token OAuth.",
+      });
+      return false;
+    }
+    window.localStorage.setItem(USER_KEY_STORAGE, clean);
     onSaved();
+    return true;
   }
 
   function save() {
-    persist();
-    onClose();
+    if (persist()) onClose();
   }
 
   function clear() {
@@ -44,7 +59,7 @@ export default function SettingsModal({
   }
 
   async function test() {
-    persist();
+    if (!persist()) return; // valeur invalide : message déjà affiché
     setTesting(true);
     setTestMsg(null);
     try {
@@ -79,6 +94,10 @@ export default function SettingsModal({
             }}
             autoFocus
           />
+          <p className="muted" style={{ marginTop: 8 }}>
+            À créer sur console.anthropic.com → API Keys. Collez uniquement la
+            clé (format sk-ant-…), pas une commande curl.
+          </p>
         </div>
 
         {testMsg && (
