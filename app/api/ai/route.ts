@@ -504,7 +504,19 @@ Produis :
 
     let message = raw;
     const low = String(raw).toLowerCase();
-    if (status === 401 || low.includes("authentication") || low.includes("x-api-key")) {
+    if (
+      low.includes("credit balance") ||
+      low.includes("billing") ||
+      low.includes("too low") ||
+      low.includes("insufficient")
+    ) {
+      message =
+        "Crédit API Anthropic insuffisant. ⚠️ L'API se facture séparément de l'abonnement Claude / Claude Code Max : ajoutez du crédit sur console.anthropic.com/settings/billing, puis réessayez.";
+    } else if (
+      status === 401 ||
+      low.includes("authentication") ||
+      low.includes("x-api-key")
+    ) {
       message =
         "Clé API invalide ou révoquée. Vérifiez votre clé (format sk-ant-…) dans Réglages, ou la variable ANTHROPIC_API_KEY de votre déploiement.";
     } else if (low.includes("invalid header") || low.includes("headers.append")) {
